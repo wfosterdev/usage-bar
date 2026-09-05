@@ -1,6 +1,6 @@
 {
   "name": "usage-bar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Live Claude usage + session monitor: official 5h/weekly limits, per-session cost, context fill, subagent and skill attribution.",
   "author": "William Foster (https://wfoster.dev)",
   "homepage": "https://wfoster.dev",
