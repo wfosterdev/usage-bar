@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Deliberately empty.
+
+    Notarisation requires the Hardened Runtime, and the Hardened Runtime's
+    restrictions are all things this app does not do: no JIT, no unsigned
+    executable memory, no DYLD environment overrides, and no loading of
+    third-party libraries into its own process.
+
+    It does spawn `node` as a child process, but library validation governs code
+    loaded INTO this process, not separate processes — so that needs no
+    entitlement either. Adding one "just in case" would weaken the runtime for
+    no reason and has to be justified to notarisation.
+
+    The app is intentionally NOT App Sandboxed: it reads Claude's transcripts and
+    credentials from arbitrary user-chosen paths, which is the whole job.
+  -->
+</dict>
+</plist>

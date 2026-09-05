@@ -1,0 +1,12 @@
+# Build output
+mac/build/
+*.dmg
+
+# The project has no runtime dependencies; this is only ever dev tooling.
+node_modules/
+
+# Local config is per-machine and may contain a pasted token.
+config.json
+
+.DS_Store
+*.log

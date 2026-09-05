@@ -1,0 +1,29 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # No install step: the project has no dependencies. The suite is offline —
+      # the one test that calls the real usage endpoint is skipped unless
+      # USAGE_BAR_LIVE=1, which CI must never set. It would spend a real
+      # account's rate limit budget on every push.
+      - run: npm test
+
+  swift:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      # test/swift.test.js parses main.swift, but only a compiler proves it
+      # builds. Signing is ad-hoc, so this needs no secrets.
+      - run: ./mac/build.sh
+      - run: ./mac/build/UsageBar.app/Contents/MacOS/UsageBar --check
