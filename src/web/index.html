@@ -292,6 +292,14 @@
           <label><span class="cap">Alert thresholds <span class="opt">comma separated percentages</span></span>
             <input type="text" id="thresholds" spellcheck="false" placeholder="50, 75, 90, 95">
           </label>
+          <label><span class="cap">Quiet period <span class="opt">minutes between pings — 0 for none</span></span>
+            <input type="number" id="notify-cooldown" min="0" max="1440" step="1">
+          </label>
+          <p class="hint">Crossing several thresholds at once is one notification, not one each,
+            and limits that cross in the same poll are combined into a single ping. The quiet
+            period suppresses anything after that for a while — except the highest threshold on
+            the list, which always gets through. Everything is recorded on the dashboard and
+            sent to the webhook either way.</p>
           <label><span class="cap">Webhook <span class="opt">optional — alerts are POSTed here as JSON</span></span>
             <input type="text" id="webhook" spellcheck="false" placeholder="https://hooks.example.com/…">
           </label>

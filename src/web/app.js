@@ -652,6 +652,7 @@ function fillForm(p) {
   $('#idle').value = Math.round(c.idleMs / 1000);
   $('#notify').checked = c.notify;
   $('#thresholds').value = (c.thresholds || []).join(', ');
+  $('#notify-cooldown').value = Math.round((c.notifyCooldownMs ?? 0) / 60000);
   $('#webhook').value = c.webhook || '';
 
   // Options that this platform or this process cannot offer.
@@ -764,6 +765,7 @@ function readForm() {
     idleMs: Number($('#idle').value) * 1000,
     notify: $('#notify').checked,
     thresholds: $('#thresholds').value.split(',').map((n) => Number(n.trim())).filter(Boolean),
+    notifyCooldownMs: Number($('#notify-cooldown').value) * 60000,
     webhook: $('#webhook').value.trim() || null,
     appearance: {
       theme: appearance.theme,

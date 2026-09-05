@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Store } from './core/store.js';
 import { createApp, menubarView } from './server/index.js';
-import { DEFAULT_THRESHOLDS } from './core/notify.js';
+import { DEFAULT_THRESHOLDS, DEFAULT_COOLDOWN_MS } from './core/notify.js';
 import {
   load as loadConfig, withOverrides, resolveTranscriptDirs, CONFIG_FILE, COMMAND_SOURCE_ALLOWED,
 } from './core/config.js';
@@ -26,6 +26,7 @@ Options
   --interval <s>      Transcript scan interval  (default 3)
   --limits <s>        Usage endpoint poll       (default 60, minimum 15)
   --thresholds <a>    Alert percentages         (default ${DEFAULT_THRESHOLDS.join(',')})
+  --quiet-for <m>     Minutes between pings     (default ${DEFAULT_COOLDOWN_MS / 60000}, 0 for none)
   --webhook <url>     POST alerts here as JSON
   --no-notify         Disable desktop notifications
   --open              Open the dashboard in a browser
@@ -71,6 +72,8 @@ async function configFrom(args) {
     notify: args.notify === false ? false : null,
     webhook: args.webhook || null,
     thresholds: args.thresholds ? args.thresholds.split(',').map(Number).filter(Boolean) : null,
+    // Not `|| null`: 0 is a meaningful value here, and means no quiet period.
+    notifyCooldownMs: args['quiet-for'] != null ? Number(args['quiet-for']) * 60000 : null,
   });
 }
 
@@ -190,6 +193,7 @@ function renderConfig(config) {
   out.push(`  usage poll    ${config.limitsIntervalMs / 1000}s`);
   out.push(`  idle after    ${config.idleMs / 1000}s`);
   out.push(`  notify        ${config.notify ? `on · ${config.thresholds.join(', ')}%` : 'off'}`);
+  out.push(`  quiet period  ${config.notifyCooldownMs ? `${config.notifyCooldownMs / 60000}m between pings` : 'none'}`);
   out.push(`  webhook       ${config.webhook || '—'}`);
   out.push(`  command src   ${COMMAND_SOURCE_ALLOWED ? 'enabled' : 'disabled (set USAGE_BAR_ALLOW_COMMAND=1)'}`);
   return out.join('\n');

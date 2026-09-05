@@ -179,7 +179,20 @@ project to meet Homebrew's notability thresholds (roughly 75 stars, 30 forks, or
 Options: `--port`, `--host`, `--credentials <path>`, `--projects <dir>`,
 `--interval` (transcript scan, default 3s), `--limits` (usage poll, default 180s,
 minimum 30s — see [Polling](#polling-and-rate-limits)), `--thresholds 50,75,90,95`,
-`--webhook <url>`, `--no-notify`, `--open`.
+`--quiet-for <minutes>`, `--webhook <url>`, `--no-notify`, `--open`.
+
+### Notifications
+
+Desktop notifications are **on** by default at 50/75/90/95%, and both the switch
+and the percentages are in Settings (or `--no-notify` / `--thresholds`).
+
+Each threshold notifies once per limit per reset window, and three rules keep
+that from becoming a stream: crossing several thresholds in one jump is a single
+notification for the highest, limits that cross in the same poll are combined
+into one, and a **quiet period** (15 minutes by default, `--quiet-for 0` to
+disable) suppresses anything after that — except the highest threshold on your
+list, which always gets through. Suppressed crossings are still shown on the
+dashboard and still sent to the webhook; only the ping is rationed.
 
 ## Settings
 

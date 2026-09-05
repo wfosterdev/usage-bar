@@ -344,7 +344,7 @@ test('a new reset window discards the previous window samples', () => {
 
 test('each threshold fires once per reset window', () => {
   const fired = [];
-  const n = new ThresholdNotifier({ thresholds: [50, 75], onEvent: (e) => fired.push(e.threshold) });
+  const n = new ThresholdNotifier({ thresholds: [50, 75], deliver: () => {}, onEvent: (e) => fired.push(e.threshold) });
   const at = (percent, resetsAt = 'A') => [{ kind: 'session', percent, resetsAt, label: 'Session (5h)', scope: null }];
 
   n.check(at(60));
@@ -360,9 +360,90 @@ test('each threshold fires once per reset window', () => {
   assert.deepEqual(fired, [50]);
 });
 
+test('a jump past several thresholds is one alert, not one each', () => {
+  const fired = [];
+  const n = new ThresholdNotifier({ thresholds: [50, 75, 90, 95], deliver: () => {}, onEvent: (e) => fired.push(e.threshold) });
+  const at = (percent) => [{ kind: 'session', percent, resetsAt: 'A', label: 'Session (5h)', scope: null }];
+
+  n.check(at(40));
+  n.check(at(92));           // crossed 50, 75 and 90 at once
+  assert.deepEqual(fired, [90]);
+  n.check(at(96));           // the skipped ones stay armed
+  assert.deepEqual(fired, [90, 95]);
+});
+
+test('limits sharing a kind keep separate state', () => {
+  const fired = [];
+  const n = new ThresholdNotifier({ thresholds: [50], deliver: () => {}, onEvent: (e) => fired.push(e.label) });
+  // Same kind, no model — the old key collided these, and their differing
+  // reset times then re-armed each other on every single poll.
+  const limits = [
+    { kind: 'weekly_scoped', percent: 10, resetsAt: '2026-09-08T00:00:00Z', label: 'Weekly · code', scope: { surface: 'code' } },
+    { kind: 'weekly_scoped', percent: 80, resetsAt: '2026-09-12T00:00:00Z', label: 'Weekly · api', scope: { surface: 'api' } },
+  ];
+  n.check(limits);
+  n.check(limits);
+  n.check(limits);
+  assert.deepEqual(fired, ['Weekly · api']);
+});
+
+test('a stale reading of an older window does not re-arm', () => {
+  const fired = [];
+  const n = new ThresholdNotifier({ thresholds: [50], deliver: () => {}, onEvent: (e) => fired.push(e.threshold) });
+  const at = (resetsAt) => [{ kind: 'session', percent: 60, resetsAt, label: 'Session (5h)', scope: null }];
+
+  n.check(at('2026-09-05T12:00:00Z'));
+  n.check(at('2026-09-05T07:00:00Z'));   // out of order — not a rollover
+  assert.deepEqual(fired, [50]);
+  n.check(at('2026-09-05T17:00:00Z'));   // genuinely later — re-arms
+  assert.deepEqual(fired, [50, 50]);
+});
+
+test('the quiet period rations pings but never swallows an escalation', () => {
+  const pings = [];
+  let clock = 0;
+  const n = new ThresholdNotifier({
+    thresholds: [50, 75, 90],
+    cooldownMs: 15 * 60 * 1000,
+    deliver: (title) => pings.push(title),
+    now: () => clock,
+  });
+  const at = (percent) => [{ kind: 'session', percent, resetsAt: 'A', label: 'Session (5h)', scope: null }];
+
+  n.check(at(55));
+  assert.equal(pings.length, 1);
+
+  clock += 60 * 1000;
+  n.check(at(76));                    // inside the quiet period
+  assert.equal(pings.length, 1);
+
+  clock += 60 * 1000;
+  n.check(at(91));                    // still quiet, but 90 is the last rung
+  assert.equal(pings.length, 2);
+
+  clock += 20 * 60 * 1000;            // quiet period has passed
+  n.check([{ kind: 'session', percent: 55, resetsAt: 'B', label: 'Session (5h)', scope: null }]);
+  assert.equal(pings.length, 3);
+});
+
+test('limits crossing together are one combined ping', () => {
+  const pings = [];
+  const n = new ThresholdNotifier({ thresholds: [50], deliver: (title, body) => pings.push({ title, body }) });
+  const events = n.check([
+    { kind: 'session', percent: 60, resetsAt: 'A', label: 'Session (5h)', scope: null },
+    { kind: 'weekly_all', percent: 70, resetsAt: 'B', label: 'Weekly (all models)', scope: null },
+  ]);
+
+  assert.equal(events.length, 2, 'both crossings are still recorded');
+  assert.equal(pings.length, 1, 'but only one notification is shown');
+  assert.match(pings[0].title, /2 limits past 50%/);
+  assert.match(pings[0].body, /Session \(5h\) 60%/);
+  assert.match(pings[0].body, /Weekly \(all models\) 70%/);
+});
+
 test('priming suppresses alerts for thresholds already crossed at startup', () => {
   const fired = [];
-  const n = new ThresholdNotifier({ thresholds: [50, 75, 90], onEvent: (e) => fired.push(e.threshold) });
+  const n = new ThresholdNotifier({ thresholds: [50, 75, 90], deliver: () => {}, onEvent: (e) => fired.push(e.threshold) });
   const limits = [{ kind: 'session', percent: 80, resetsAt: 'A', label: 'Session (5h)', scope: null }];
   n.prime(limits);
   n.check(limits);

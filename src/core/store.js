@@ -93,6 +93,7 @@ export class Store extends EventEmitter {
     return new ThresholdNotifier({
       enabled: this.config.notify,
       thresholds: this.config.thresholds,
+      cooldownMs: this.config.notifyCooldownMs,
       webhook: this.config.webhook,
       onEvent: (e) => this.emit('alert', e),
     });
@@ -364,6 +365,7 @@ export class Store extends EventEmitter {
     const notifyChanged =
       before.notify !== config.notify ||
       before.webhook !== config.webhook ||
+      before.notifyCooldownMs !== config.notifyCooldownMs ||
       JSON.stringify(before.thresholds) !== JSON.stringify(config.thresholds);
 
     if (notifyChanged) {

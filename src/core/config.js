@@ -50,6 +50,15 @@ export const DEFAULTS = Object.freeze({
   idleMs: 300000,
   notify: true,
   thresholds: [50, 75, 90, 95],
+  /**
+   * Quiet period between desktop notifications. These limits move over hours,
+   * so a second ping a few minutes after the first is telling you something you
+   * just looked at. 0 disables the quiet period.
+   *
+   * It gates the desktop ping only — the alerts list, the web UI and the
+   * webhook still get every crossing.
+   */
+  notifyCooldownMs: 900000,
   webhook: null,
 });
 
@@ -212,6 +221,16 @@ export function validate(patch) {
     .sort((a, b) => a - b);
   if (!merged.thresholds.length) merged.thresholds = [...DEFAULTS.thresholds];
 
+  const cool = Number(merged.notifyCooldownMs);
+  // A day is not a cooldown, it is switching notifications off with extra
+  // steps — and the checkbox above already does that, honestly.
+  if (!Number.isFinite(cool) || cool < 0 || cool > 86400000) {
+    errors.push('notifyCooldownMs must be a number between 0 and 86400000 (24h)');
+    merged.notifyCooldownMs = DEFAULTS.notifyCooldownMs;
+  } else {
+    merged.notifyCooldownMs = cool;
+  }
+
   if (merged.webhook != null) {
     const w = String(merged.webhook).trim();
     if (!w) merged.webhook = null;
@@ -264,6 +283,7 @@ export function withOverrides(config, overrides = {}) {
   if (O.notify != null) out.notify = O.notify;
   if (O.webhook) out.webhook = O.webhook;
   if (O.thresholds?.length) out.thresholds = O.thresholds;
+  if (O.notifyCooldownMs != null) out.notifyCooldownMs = O.notifyCooldownMs;
   return validate(out).config;
 }
 
