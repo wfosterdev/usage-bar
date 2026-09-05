@@ -187,7 +187,9 @@ function renderConfig(config) {
   out.push(`${C.b}Configuration${C.r} ${C.dim}${CONFIG_FILE}${C.r}`);
   out.push(`  credentials   ${describeSource(config.credentials)}`);
   out.push(`  transcripts   ${resolveTranscriptDirs(config).join('\n                ')}`);
-  out.push(`  theme         ${config.appearance.theme} · ${config.appearance.mode} · menu bar ${config.appearance.menubarStyle}`);
+  const mb = config.appearance.menubar;
+  out.push(`  theme         ${config.appearance.theme} · ${config.appearance.mode}`);
+  out.push(`  menu bar      ${mb.scheme} · fill ${mb.fill} · severity ${mb.severity ? 'on' : 'off'}`);
   out.push(`  gauge         % ${config.appearance.metric} · tracking ${config.appearance.scope}`);
   out.push(`  scan every    ${config.scanIntervalMs / 1000}s`);
   out.push(`  usage poll    ${config.limitsIntervalMs / 1000}s`);
