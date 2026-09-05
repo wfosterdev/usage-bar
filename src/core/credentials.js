@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { platform } from 'node:os';
 import { join } from 'node:path';
@@ -6,6 +7,12 @@ import { promisify } from 'node:util';
 import { claudeHome, COMMAND_SOURCE_ALLOWED, DEFAULTS } from './config.js';
 
 const run = promisify(execFile);
+
+/** One phrasing for the keychain, used for both the origin and the label. */
+function keychainLabel({ service, account } = {}) {
+  const name = service || DEFAULTS.credentials.service;
+  return `macOS keychain (${name}${account ? ` / ${account}` : ''})`;
+}
 
 export function defaultCredentialsPath() {
   return join(claudeHome(), '.credentials.json');
@@ -38,7 +45,7 @@ async function fromKeychain(service, account) {
     const { stdout } = await run('security', args, { timeout: 15000, maxBuffer: 1 << 20 });
     const raw = stdout.trim();
     if (!raw) return { ok: false, reason: 'no-credentials', message: `Keychain item "${service}" is empty.` };
-    return { ok: true, raw, origin: `keychain:${service}${account ? `/${account}` : ''}` };
+    return { ok: true, raw, origin: keychainLabel({ service, account }) };
   } catch (err) {
     return {
       ok: false,
@@ -159,14 +166,43 @@ export async function readCredentials(credentialsConfig = DEFAULTS.credentials) 
   return parseCredentials(result.raw, result.origin);
 }
 
-/** Human description of where credentials are being read from. */
+/** Is there a Claude Code item under this name in the login keychain? */
+export async function keychainPresent(service = DEFAULTS.credentials.service, account = null) {
+  if (platform() !== 'darwin') return false;
+  // No `-w`: this asks whether the item exists, and deliberately does not ask
+  // for the secret, so it does not trigger a keychain access prompt.
+  const args = ['find-generic-password', '-s', service];
+  if (account) args.push('-a', account);
+  try {
+    await run('security', args, { timeout: 10000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Human description of where credentials are being read from.
+ *
+ * `auto` names the source it will actually land on rather than reciting the
+ * whole chain: on a Mac there is usually no credentials file at all — Claude
+ * Code keeps the blob in the login keychain — and reporting the path it is
+ * about to miss reads as though auto-detection had settled on the file.
+ */
 export function describeSource(credentialsConfig = DEFAULTS.credentials) {
   const cfg = { ...DEFAULTS.credentials, ...(credentialsConfig || {}) };
   switch (cfg.source) {
     case 'file': return cfg.path || defaultCredentialsPath();
-    case 'keychain': return `macOS keychain · ${cfg.service}${cfg.account ? ` / ${cfg.account}` : ''}`;
+    case 'keychain': return keychainLabel(cfg);
     case 'command': return `command · ${cfg.command}`;
     case 'token': return 'pasted token';
-    default: return `auto · ${defaultCredentialsPath()}${platform() === 'darwin' ? ', then keychain' : ''}`;
+    default: {
+      const path = cfg.path || defaultCredentialsPath();
+      if (existsSync(path)) return `auto · ${path}`;
+      // No file: on macOS the keychain is where it will come from, and
+      // elsewhere the path is still the most useful thing to name in the
+      // failure that follows.
+      return platform() === 'darwin' ? `auto · ${keychainLabel(cfg)}` : `auto · ${path}`;
+    }
   }
 }

@@ -654,7 +654,7 @@ function candidateChips(host, list, onPick) {
     const b = el('button', 'candidate', c.path);
     b.type = 'button';
     b.title = `Use ${c.path}`;
-    b.addEventListener('click', () => onPick(c.path));
+    b.addEventListener('click', () => onPick(c.path, c.source));
     host.append(b);
   }
 }
@@ -708,9 +708,18 @@ function fillForm(p) {
       : 'No transcript directories configured.',
     total > 0 ? 'good' : 'bad');
 
-  candidateChips($('#cred-candidates'), p.candidates.credentials, (path) => {
-    $('#cred-path').value = path;
-    if ($('#cred-source').value === 'auto') $('#cred-source').value = 'file';
+  // The keychain is offered alongside the file paths, because on macOS it is
+  // usually the only place credentials exist — a chip row with nothing in it
+  // reads as "nothing was found".
+  const credChips = [...p.candidates.credentials];
+  if (p.candidates.keychainPresent) credChips.push({ path: 'macOS keychain', source: 'keychain' });
+  candidateChips($('#cred-candidates'), credChips, (path, source) => {
+    if (source === 'keychain') {
+      $('#cred-source').value = 'keychain';
+    } else {
+      $('#cred-path').value = path;
+      if ($('#cred-source').value === 'auto') $('#cred-source').value = 'file';
+    }
     syncVisibility();
   });
   candidateChips($('#tx-candidates'), p.candidates.transcripts, (path) => {
