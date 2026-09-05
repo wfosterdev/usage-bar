@@ -27,7 +27,7 @@ Active sessions 2 of 40 · $44.84 · $55.36/h
   ● Claude usage bar with session monitoring   opus-5    5.1M    $9.51
     usage/bar · ctx 14% · ▶ Bash
   ● main/api                                   opus-5   35.7M   $35.33
-    main/api · l4/analytics-laneb2 · ctx 10% · 5 subagents · ▶ Agent
+    main/api · l4/analytics-laneb2 · ctx 10% · 3/5 subagents · ▶ 3 agents
 ```
 
 ## Install
@@ -470,7 +470,11 @@ or more directories you choose in [Settings](#settings). The first
 pass reads the whole archive (~500ms for 27k lines) to build history; after that
 each poll reads only appended bytes (~13ms). Subagent transcripts under
 `<session>/subagents/` roll up into their parent session while keeping their own
-per-agent cost and context.
+per-agent cost and context. An async agent is registered from the parent's launch
+record, so it appears with the description it was dispatched with before it has
+spent anything; nothing marks an agent as finished, so "running" means it wrote
+within the same idle window the sessions use. A session whose own turn has ended
+still counts as busy while its agents are working.
 
 ## Privacy
 

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import { costOf, uncachedCostOf, normalizeModel, contextWindowFor, emptyTokens, addTokens, cacheHitRatio } from '../src/core/pricing.js';
 import { TailReader, discover, contentToText, proseOf, toolNames } from '../src/core/transcripts.js';
-import { newSession, applyLine, summarize, detail, isActive, burnRate } from '../src/core/sessions.js';
+import { newSession, applyLine, summarize, detail, isActive, burnRate, activeSubagents } from '../src/core/sessions.js';
 import { normalizeUsage } from '../src/core/limits.js';
 import { LimitProjector } from '../src/core/projection.js';
 import { ThresholdNotifier } from '../src/core/notify.js';
@@ -186,6 +186,61 @@ test('subagent usage rolls into session totals but keeps its own record', () => 
   assert.equal(s.cost.toFixed(6), (costOf('claude-opus-5', usage()) * 2).toFixed(6));
   // A subagent must not overwrite the main conversation's context gauge.
   assert.equal(s.context.tokens, 11100);
+});
+
+test('an async launch registers a subagent before it has written anything', () => {
+  const s = newSession('s1', 'p');
+  applyLine(s, {
+    type: 'user', timestamp: '2026-09-05T01:00:00.000Z',
+    toolUseResult: {
+      isAsync: true, status: 'async_launched', agentId: 'a1',
+      description: 'Map the L4 tier', resolvedModel: 'claude-opus-5',
+    },
+  });
+  const sub = s.subagents.get('a1');
+  assert.equal(s.subagents.size, 1);
+  assert.equal(sub.description, 'Map the L4 tier');
+  assert.equal(sub.model, 'claude-opus-5');
+  assert.equal(sub.calls, 0);
+  assert.equal(sub.cost, 0);
+  assert.equal(activeSubagents(s, Date.parse('2026-09-05T01:01:00.000Z')), 1);
+});
+
+test('a subagent seen before its launch record keeps the earlier start', () => {
+  const s = newSession('s1', 'p');
+  applyLine(s, assistant({ timestamp: '2026-09-05T01:05:00.000Z' }), { isSubagent: true, agentId: 'a1' });
+  applyLine(s, {
+    type: 'user', timestamp: '2026-09-05T01:00:00.000Z',
+    toolUseResult: { isAsync: true, status: 'async_launched', agentId: 'a1', description: 'Audit', resolvedModel: 'claude-opus-5' },
+  });
+  const sub = s.subagents.get('a1');
+  assert.equal(s.subagents.size, 1);
+  assert.equal(sub.firstTs, '2026-09-05T01:00:00.000Z');
+  assert.equal(sub.lastTs, '2026-09-05T01:05:00.000Z');
+  assert.equal(sub.description, 'Audit');
+});
+
+test('running subagents make a session busy even when the parent has stopped', () => {
+  const s = newSession('s1', 'p');
+  // Parent dispatches two agents and ends its own turn.
+  applyLine(s, assistant({ message: { ...assistant().message, stop_reason: 'end_turn' } }));
+  for (const [id, ts] of [['a1', '2026-09-05T01:00:10.000Z'], ['a2', '2026-09-05T01:00:20.000Z']]) {
+    applyLine(s, assistant({ timestamp: ts }), { isSubagent: true, agentId: id });
+  }
+  const now = Date.parse('2026-09-05T01:01:00.000Z');
+  const live = summarize(s, now);
+  assert.equal(live.lastStopReason, 'end_turn');
+  assert.equal(live.subagentActiveCount, 2);
+  assert.equal(live.busy, true);
+
+  // An hour on, nothing is running and the count reads zero of two.
+  const later = Date.parse('2026-09-05T02:01:00.000Z');
+  const cold = summarize(s, later);
+  assert.equal(cold.active, false);
+  assert.equal(cold.busy, false);
+  assert.equal(cold.subagentActiveCount, 0);
+  assert.equal(cold.subagentCount, 2);
+  assert.equal(detail(s, later).subagents.every((x) => x.active === false), true);
 });
 
 test('skill and agent attribution are tracked separately', () => {

@@ -173,15 +173,20 @@ function sessionRow(s) {
   if (openIds.has(s.sessionId)) row.open = true;
 
   const sum = el('summary');
-  const busy = s.lastStopReason === 'tool_use' && s.active;
+  const busy = s.busy;
+  const live = s.subagentActiveCount || 0;
+  // What the parent is doing, if anything; otherwise what its agents are doing.
+  const doing = s.activeTools[0] || (live ? `${live} agent${live > 1 ? 's' : ''}` : null);
   const state = el('span', `state ${busy ? 'busy' : s.active ? 'idle' : ''}`);
-  state.title = busy ? `running ${s.activeTools[0] || 'tool'}` : s.active ? 'idle' : 'inactive';
+  state.title = busy ? `running ${doing || 'tool'}` : s.active ? 'idle' : 'inactive';
   sum.append(state);
 
   const title = el('div', 'stitle');
   title.append(el('b', null, s.title || s.projectLabel || s.sessionId.slice(0, 8)));
-  const meta = [s.projectLabel, s.gitBranch, busy ? `▶ ${s.activeTools[0]}` : null,
-    s.subagentCount ? `${s.subagentCount} subagents` : null,
+  const meta = [s.projectLabel, s.gitBranch, busy && doing ? `▶ ${doing}` : null,
+    // Live over lifetime, because a session that ran twelve agents an hour ago
+    // and a session running twelve right now are not the same thing.
+    s.subagentCount ? (live ? `${live}/${s.subagentCount} subagents` : `${s.subagentCount} subagents`) : null,
     s.active ? `${fmtDur(s.idleMs)} idle` : timeOf(s.lastTs)].filter(Boolean);
   title.append(el('span', null, meta.join(' · ')));
   sum.append(title);
@@ -294,6 +299,10 @@ function messagesBlock(messages) {
   return b;
 }
 
+/**
+ * A row is either a plain array of cells or `{ cells, className }`, and a cell
+ * is either text or a node the caller has already built.
+ */
 function table(headers, rows) {
   const t = el('table');
   const thead = el('thead');
@@ -302,8 +311,14 @@ function table(headers, rows) {
   thead.append(hr); t.append(thead);
   const tb = el('tbody');
   for (const r of rows) {
-    const tr = el('tr');
-    r.forEach((c, i) => tr.append(el('td', i ? 'num' : null, c)));
+    const { cells, className } = Array.isArray(r) ? { cells: r, className: null } : r;
+    const tr = el('tr', className);
+    cells.forEach((c, i) => {
+      const td = el('td', i ? 'num' : null);
+      if (c instanceof Node) td.append(c);
+      else td.textContent = c;
+      tr.append(td);
+    });
     tb.append(tr);
   }
   t.append(tb);
@@ -312,15 +327,27 @@ function table(headers, rows) {
 
 function subagentsBlock(subs) {
   const b = el('div', 'block');
-  b.append(el('h3', null, `Subagents (${subs.length})`));
+  const live = subs.filter((s) => s.active).length;
+  b.append(el('h3', null, live ? `Subagents (${live}/${subs.length} running)` : `Subagents (${subs.length})`));
   b.append(table(['Agent', 'Model', 'Ctx', 'Tokens', 'Cost'],
-    subs.map((s) => [
-      s.agentType || s.agentId.slice(0, 8),
-      (s.model || '—').replace('claude-', ''),
-      fmtPct(s.context.pct),
-      fmtTokens(s.tokens.total),
-      fmtMoney(s.cost),
-    ])));
+    subs.map((s) => {
+      const name = el('div', 'namecell');
+      // The same live green as the header and the session rows, so "running"
+      // looks the same wherever it is said.
+      if (s.active) name.append(el('span', 'state live'));
+      // The launch record's description says what it was sent to do, which is
+      // far more use than a bare agent type when several of the same type run.
+      const label = el('span', null, s.description || s.agentType || s.agentId.slice(0, 8));
+      label.title = s.agentId;
+      name.append(label);
+      return [
+        name,
+        (s.model || '—').replace('claude-', ''),
+        fmtPct(s.context.pct),
+        fmtTokens(s.tokens.total),
+        fmtMoney(s.cost),
+      ];
+    })));
   return b;
 }
 
