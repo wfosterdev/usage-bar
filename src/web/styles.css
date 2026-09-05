@@ -100,6 +100,9 @@ tbody tr:last-child td { border-bottom: none; }
 .chart { display: flex; align-items: flex-end; gap: 3px; height: 110px; padding: 8px 0; }
 .chart .col { flex: 1; min-width: 3px; background: var(--accent); border-radius: 2px 2px 0 0; opacity: .82; position: relative; }
 .chart .col:hover { opacity: 1; }
+.chart .col.quiet { background: var(--line); border-radius: 2px; }
+.chart.dense { gap: 1px; }
+.chart.dense .col { min-width: 1px; }
 .chart .col::after { content: attr(data-tip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
   background: var(--ink); color: var(--bg); font-family: var(--mono); font-size: 10px; padding: 3px 6px; border-radius: 4px;
   white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .12s; margin-bottom: 4px; z-index: 5; }

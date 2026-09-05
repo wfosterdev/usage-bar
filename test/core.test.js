@@ -515,18 +515,58 @@ test('history rolls up by day and by dimension', () => {
   h.record({ ts: '2026-09-04T11:00:00Z', project: 'p1', model: 'claude-sonnet-5', skill: null, cost: 1, usage: usage() });
   h.record({ ts: '2026-09-05T10:00:00Z', project: 'p2', model: 'claude-opus-5', skill: 'ol-l4-execute', cost: 4, usage: usage() });
 
-  const series = h.series('day');
+  const now = Date.parse('2026-09-05T23:00:00Z');
+  const series = h.series('day', 30, now).filter((d) => !d.quiet);
   assert.equal(series.length, 2);
   assert.equal(series[0].cost, 3);
   assert.equal(series[1].cost, 4);
 
-  const t = h.totals(30);
+  const t = h.totals(30, 12, now);
   assert.equal(t.cost, 7);
   assert.equal(t.byProject[0].key, 'p2');
   assert.equal(t.bySkill[0].key, 'ol-l4-execute');
   assert.equal(t.bySkill[0].cost, 6);
   // A null skill is not a bucket.
   assert.equal(t.bySkill.some((r) => r.key === 'null'), false);
+});
+
+test('the history window is calendar days, not populated buckets', () => {
+  const h = new History();
+  const day = (n, cost) => h.record({
+    ts: `2026-08-${String(n).padStart(2, '0')}T10:00:00Z`,
+    project: `p${n}`, model: 'claude-opus-5', skill: null, cost, usage: usage(),
+  });
+  // Three active days spread over three weeks: 8th, 20th and 30th of August.
+  day(8, 1); day(20, 2); day(30, 4);
+  const now = Date.parse('2026-08-31T12:00:00Z');
+
+  // A 7-day window reaches back to the 25th, so only the 30th is in it. The old
+  // "last N buckets" rule returned all three here, whatever N was asked for.
+  const week = h.totals(7, 12, now);
+  assert.equal(week.cost, 4);
+  assert.equal(week.days, 1);
+  assert.equal(week.window, 7);
+
+  // The series spans the whole window, quiet days included, so the chart's
+  // spacing matches the calendar rather than closing the gaps.
+  const week7 = h.series('day', 7, now);
+  assert.equal(week7.length, 7);
+  assert.equal(week7.filter((d) => !d.quiet).length, 1);
+  assert.equal(week7.at(-1).key, '2026-08-31');
+  assert.equal(week7[0].key, '2026-08-25');
+  assert.equal(week7[0].cost, 0);
+
+  // A window longer than what is retained is capped at the retention.
+  assert.equal(h.series('day', 400, now).length, 90);
+
+  const fortnight = h.totals(14, 12, now);
+  assert.equal(fortnight.cost, 6);
+  assert.equal(fortnight.days, 2);
+
+  const month = h.totals(30, 12, now);
+  assert.equal(month.cost, 7);
+  assert.equal(month.days, 3);
+  assert.equal(month.byProject.length, 3);
 });
 
 /* The glance tracks ONE limit. It looked like it was summing session+weekly

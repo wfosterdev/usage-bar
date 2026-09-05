@@ -416,17 +416,24 @@ async function loadHistory() {
 
   host.innerHTML = '';
   const max = Math.max(...h.series.map((s) => s.cost), 0.01);
-  const chart = el('div', 'chart');
+  // A 90-day window is three times the columns a 30-day one has; close the gaps
+  // so the bars keep a usable width instead of overflowing the card.
+  const chart = el('div', `chart${h.series.length > 45 ? ' dense' : ''}`);
   for (const p of h.series) {
-    const col = el('div', 'col');
-    col.style.height = `${Math.max(2, (p.cost / max) * 100)}%`;
-    col.dataset.tip = `${p.key} · ${fmtMoney(p.cost)} · ${fmtTokens(p.tokens)}`;
+    // A quiet slot is drawn as a baseline stub rather than dropped, so the
+    // spacing along the axis stays true to the calendar.
+    const col = el('div', `col${p.quiet ? ' quiet' : ''}`);
+    col.style.height = p.quiet ? '2px' : `${Math.max(2, (p.cost / max) * 100)}%`;
+    col.dataset.tip = p.quiet
+      ? `${p.key} · no activity`
+      : `${p.key} · ${fmtMoney(p.cost)} · ${fmtTokens(p.tokens)}`;
     chart.append(col);
   }
   host.append(chart);
 
   const total = el('div', 'limit-note',
-    `${h.totals.days} days · ${fmtMoney(h.totals.cost)} equivalent · ${fmtTokens(h.totals.tokens.total)} tokens`);
+    `${h.totals.days} active ${h.totals.days === 1 ? 'day' : 'days'} of ${h.totals.window} · `
+    + `${fmtMoney(h.totals.cost)} equivalent · ${fmtTokens(h.totals.tokens.total)} tokens`);
   host.append(total);
 
   const cols = el('div', 'hist-cols');
