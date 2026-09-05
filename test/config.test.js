@@ -124,6 +124,20 @@ test('a file source reads and parses the credentials document', async () => {
   assert.equal(r.origin, path);
 });
 
+test('auto names the source it will land on, not the file it will miss', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ub-cfg-'));
+  const path = join(dir, '.credentials.json');
+
+  // No file: on a Mac the keychain is where it will actually read from, so
+  // naming the absent path would read as though auto had settled on the file.
+  const missing = describeSource({ source: 'auto', path });
+  if (platform() === 'darwin') assert.match(missing, /macOS keychain/);
+  else assert.ok(missing.includes(path));
+
+  await writeFile(path, creds());
+  assert.ok(describeSource({ source: 'auto', path }).includes(path));
+});
+
 test('a missing file reports where it looked', async () => {
   const r = await readCredentials({ source: 'file', path: '/definitely/not/here.json' });
   assert.equal(r.ok, false);

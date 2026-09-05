@@ -10,7 +10,7 @@ import {
 } from '../core/config.js';
 import { testCredentials } from '../core/limits.js';
 import { Store } from '../core/store.js';
-import { describeSource } from '../core/credentials.js';
+import { describeSource, keychainPresent } from '../core/credentials.js';
 import { discover } from '../core/transcripts.js';
 import { ABOUT } from '../core/about.js';
 import {
@@ -283,11 +283,18 @@ async function configPayload(store) {
     return { ...st, sessions: found.filter((f) => f.kind === 'session').length };
   }));
 
+  const candidates = discoverCandidates();
+  // Probed rather than assumed: on a Mac there is usually no credentials file
+  // at all, and "keychain available on this OS" is a different claim from
+  // "Claude Code has actually put an item there".
+  candidates.keychainPresent = candidates.keychainAvailable
+    && await keychainPresent(store.config.credentials.service, store.config.credentials.account);
+
   return {
     config: redactConfig(store.config),
     defaults: DEFAULTS,
     configFile: CONFIG_FILE,
-    candidates: discoverCandidates(),
+    candidates,
     options: {
       credentialSources: CREDENTIAL_SOURCES,
       transcriptSources: TRANSCRIPT_SOURCES,
@@ -295,7 +302,9 @@ async function configPayload(store) {
       platform: process.platform,
     },
     status: {
-      credentialSource: describeSource(store.config.credentials),
+      // Where they actually came from once a fetch has succeeded; the
+      // configured intent only until then.
+      credentialSource: (store.limits.ok && store.limits.source) || describeSource(store.config.credentials),
       credentialsOk: store.limits.ok === true,
       credentialsMessage: store.limits.ok ? null : store.limits.message,
       transcriptDirs: dirStatuses,
