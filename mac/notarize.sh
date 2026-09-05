@@ -58,7 +58,19 @@ if [ "$STATUS" != "Accepted" ]; then
   exit 1
 fi
 
-echo "notarised. stapling the ticket…"
+echo "notarised."
+
+# A zip is only a transport: stapler refuses it ("incapable of working with ZIP
+# archive files"), and there would be nothing to staple to anyway — the ticket
+# belongs on the bundle inside, which the caller staples after unpacking.
+case "$ARTEFACT" in
+  *.zip)
+    echo "zip archive — the caller staples the bundle inside it"
+    exit 0
+    ;;
+esac
+
+echo "stapling the ticket…"
 # Stapling is what makes it validate OFFLINE. Without it the first launch on a
 # machine with no network still shows a warning, which defeats the point.
 xcrun stapler staple "$ARTEFACT"

@@ -44,8 +44,10 @@ if [ "$CAN_NOTARIZE" = "1" ]; then
   # which a plain zip mangles and notarisation then rejects.
   /usr/bin/ditto -c -k --keepParent "$APP" "$APP_ZIP"
   "$HERE/notarize.sh" "$APP_ZIP"
-  # The ticket is stapled to the zip's contents, so re-staple the .app directly.
+  # The zip was only the transport — notarize.sh cannot staple an archive, so
+  # the ticket goes onto the bundle here.
   xcrun stapler staple "$APP"
+  xcrun stapler validate "$APP"
   rm -f "$APP_ZIP"
 fi
 
