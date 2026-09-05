@@ -56,6 +56,8 @@ struct ActiveSession: Decodable {
     let tokens: Double
     let contextPct: Double
     let subagents: Int
+    // Optional so a newer app still decodes an older server's payload.
+    let subagentsActive: Int?
     let busy: Bool
     let tool: String?
     let idleMs: Double?
@@ -1021,8 +1023,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let m = session.model { detail.append(m.replacingOccurrences(of: "claude-", with: "")) }
             if let b = session.branch { detail.append(b) }
             detail.append(String(format: "context %.0f%%", session.contextPct))
-            if session.subagents > 0 { detail.append("\(session.subagents) subagents") }
+            if session.subagents > 0 {
+                let live = session.subagentsActive ?? 0
+                detail.append(live > 0 ? "\(live)/\(session.subagents) subagents"
+                                       : "\(session.subagents) subagents")
+            }
             if session.busy, let tool = session.tool { detail.append("running \(tool)") }
+            else if session.busy, let live = session.subagentsActive, live > 0 {
+                detail.append("running \(live) agent\(live > 1 ? "s" : "")")
+            }
             else if let idle = session.idleMs { detail.append("\(Fmt.duration(idle / 1000)) idle") }
             for d in detail { sub.addItem(disabledItem(mono(d, size: 11, color: menuDim))) }
             sub.addItem(.separator())
