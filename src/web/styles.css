@@ -84,6 +84,27 @@ th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: 
 td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 tbody tr:last-child td { border-bottom: none; }
 
+/* Cost by token class: one stacked bar, and a colour key per row beneath it. */
+.split { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--bg);
+  border: 1px solid var(--line); margin-bottom: 9px; }
+.split .seg { display: block; height: 100%; }
+.key { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.seg.input, .key.input { background: var(--accent); }
+.seg.output, .key.output { background: var(--ok); }
+.seg.cacheWrite5m, .key.cacheWrite5m { background: var(--warn); }
+.seg.cacheWrite1h, .key.cacheWrite1h { background: color-mix(in srgb, var(--warn) 55%, var(--ink)); }
+.seg.cacheRead, .key.cacheRead { background: var(--ink-dim); }
+
+/* The analyse-this prompt: a scrollable, selectable block with its own copy
+   button in the heading row. */
+.analyse-head { display: flex; align-items: center; gap: 10px; }
+.analyse-head h3 { margin-bottom: 0; }
+.analyse-head button { margin-left: auto; }
+.analyse .hint { font-size: 11.5px; color: var(--ink-dim); margin: 5px 0 7px; }
+.analyse pre { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 7px;
+  padding: 10px 12px; font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  max-height: 280px; overflow: auto; white-space: pre; user-select: text; }
+
 .msgs { display: flex; flex-direction: column; gap: 7px; max-height: 380px; overflow-y: auto; padding-right: 4px; }
 .msg { border-left: 2px solid var(--line); padding: 4px 0 4px 10px; }
 .msg.assistant { border-left-color: var(--accent); }

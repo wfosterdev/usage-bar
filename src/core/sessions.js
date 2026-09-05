@@ -1,7 +1,7 @@
 import { contentToText, proseOf, toolNames } from './transcripts.js';
 import {
   costOf, uncachedCostOf, emptyTokens, addTokens, totalTokens,
-  cacheHitRatio, contextWindowFor, normalizeModel,
+  cacheHitRatio, contextWindowFor, normalizeModel, costSplit,
 } from './pricing.js';
 import { projectLabel, decodeProjectDir } from './paths.js';
 
@@ -374,6 +374,9 @@ export function detail(s, now = Date.now(), idleMs = 5 * MINUTE) {
     denials: s.denials,
     permissionMode: s.permissionMode,
     version: s.version,
+    // Where the money went, by token class. Exact rather than apportioned:
+    // computed per model before summing, so it reconciles with `cost`.
+    costSplit: costSplit(s.perModel),
     perModel: mapToSorted(s.perModel),
     perSkill: mapToSorted(s.perSkill),
     perAgent: mapToSorted(s.perAgent),
