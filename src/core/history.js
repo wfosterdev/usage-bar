@@ -1,4 +1,4 @@
-import { emptyTokens, addTokens, totalTokens } from './pricing.js';
+import { emptyTokens, addTokens, totalTokens, costSplit } from './pricing.js';
 
 const DAY = 'day';
 const HOUR_MS = 3600_000;
@@ -157,6 +157,9 @@ export class History {
       window: days,
       cost: agg.cost,
       tokens: { ...agg.tokens, total: totalTokens(agg.tokens) },
+      // The per-model dimension is already carried per bucket, so the same
+      // exact split is available over a whole window.
+      costSplit: costSplit(agg.byModel),
       byProject: this.#serializeDim(agg.byProject, topN),
       byModel: this.#serializeDim(agg.byModel, topN),
       bySkill: this.#serializeDim(agg.bySkill, topN),

@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, appendFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { costOf, uncachedCostOf, normalizeModel, contextWindowFor, emptyTokens, addTokens, cacheHitRatio } from '../src/core/pricing.js';
+import { costOf, uncachedCostOf, normalizeModel, contextWindowFor, emptyTokens, addTokens, cacheHitRatio, costSplit, TOKEN_CLASSES } from '../src/core/pricing.js';
 import { TailReader, discover, contentToText, proseOf, toolNames } from '../src/core/transcripts.js';
 import { newSession, applyLine, summarize, detail, isActive, burnRate, activeSubagents } from '../src/core/sessions.js';
 import { normalizeUsage } from '../src/core/limits.js';
@@ -73,6 +73,37 @@ test('cache hit ratio is reads over readable input', () => {
   const t = addTokens(emptyTokens(), usage());
   assert.equal(cacheHitRatio(t).toFixed(4), (10000 / 10100).toFixed(4));
   assert.equal(cacheHitRatio(emptyTokens()), 0);
+});
+
+test('the cost split is exact across mixed models, not a blended rate', () => {
+  // opus-5 in $5 / out $25, sonnet-5 in $2 / out $10 — a blended rate would
+  // land between the two and reconcile with neither.
+  const perModel = new Map([
+    ['claude-opus-5', { tokens: { input: 1e6, output: 1e6, cacheWrite5m: 1e6, cacheWrite1h: 1e6, cacheRead: 1e6 } }],
+    ['claude-sonnet-5', { tokens: { input: 1e6, output: 1e6, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 1e6 } }],
+  ]);
+  const s = costSplit(perModel);
+
+  assert.equal(s.input.cost.toFixed(6), (5 + 2).toFixed(6));
+  assert.equal(s.output.cost.toFixed(6), (25 + 10).toFixed(6));
+  assert.equal(s.cacheWrite5m.cost.toFixed(6), (5 * 1.25).toFixed(6));
+  assert.equal(s.cacheWrite1h.cost.toFixed(6), (5 * 2).toFixed(6));
+  assert.equal(s.cacheRead.cost.toFixed(6), (5 * 0.1 + 2 * 0.1).toFixed(6));
+  assert.equal(s.total.tokens, 8e6);
+
+  // The parts must add up to the whole.
+  const parts = TOKEN_CLASSES.reduce((a, c) => a + s[c].cost, 0);
+  assert.equal(parts.toFixed(9), s.total.cost.toFixed(9));
+});
+
+test('a session cost split reconciles with the cost recorded for it', () => {
+  const s = newSession('s1', 'p');
+  applyLine(s, assistant());
+  applyLine(s, assistant({ message: { model: 'claude-sonnet-5', stop_reason: 'end_turn', usage: usage(), content: [] } }));
+  applyLine(s, assistant({ attributionAgent: 'Explore' }), { isSubagent: true, agentId: 'a1' });
+  const d = detail(s);
+  assert.equal(d.costSplit.total.cost.toFixed(9), d.cost.toFixed(9));
+  assert.equal(d.costSplit.total.tokens, d.tokens.total);
 });
 
 /* ---------- transcripts ---------- */

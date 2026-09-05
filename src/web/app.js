@@ -249,12 +249,15 @@ async function loadDetail(id, host) {
   }
   host.innerHTML = '';
   host.append(statGrid(d));
+  const split = costSplitBlock(d.costSplit);
+  if (split) host.append(split);
   if (d.messages.length) host.append(messagesBlock(d.messages));
   if (d.subagents.length) host.append(subagentsBlock(d.subagents));
   const attribution = breakdownBlock(d);
   if (attribution) host.append(attribution);
   const events = eventsBlock(d);
   if (events) host.append(events);
+  host.append(analyseBlock(d));
   host.append(footerBlock(d));
 }
 
@@ -282,6 +285,53 @@ function statGrid(d) {
   if (d.denialCount) g.append(stat('Denials', String(d.denialCount), 'tools blocked'));
   if (d.queuedOps) g.append(stat('Queued', String(d.queuedOps), 'prompts'));
   return g;
+}
+
+const TOKEN_CLASSES = [
+  ['input', 'Input'],
+  ['output', 'Output'],
+  ['cacheWrite5m', 'Cache write 5m'],
+  ['cacheWrite1h', 'Cache write 1h'],
+  ['cacheRead', 'Cache read'],
+];
+
+/**
+ * Where the money went, by token class.
+ *
+ * The bar answers "what dominates" at a glance and the table carries the
+ * numbers; the two are the same data because a five-way split is very hard to
+ * read off colour alone once one slice is 80% of the width.
+ */
+function costSplitBlock(split, title = 'Cost by token class') {
+  if (!split || !split.total.cost) return null;
+  const b = el('div', 'block');
+  b.append(el('h3', null, title));
+
+  const bar = el('div', 'split');
+  for (const [key] of TOKEN_CLASSES) {
+    const pct = (split[key].cost / split.total.cost) * 100;
+    if (pct <= 0) continue;
+    const seg = el('i', `seg ${key}`);
+    seg.style.width = `${pct}%`;
+    seg.title = `${TOKEN_CLASSES.find(([k]) => k === key)[1]} · ${fmtMoney(split[key].cost)}`;
+    bar.append(seg);
+  }
+  b.append(bar);
+
+  b.append(table(['Class', 'Tokens', 'Cost', 'Share'],
+    TOKEN_CLASSES.map(([key, label]) => {
+      const c = split[key];
+      const name = el('div', 'namecell');
+      name.append(el('i', `key ${key}`));
+      name.append(el('span', null, label));
+      return [
+        name,
+        fmtTokens(c.tokens),
+        fmtMoney(c.cost),
+        fmtPct((c.cost / split.total.cost) * 100),
+      ];
+    })));
+  return b;
 }
 
 function messagesBlock(messages) {
@@ -398,6 +448,147 @@ function eventsBlock(d) {
   return b;
 }
 
+/* ---------- analyse-this prompt ---------- */
+
+const pad = (s, n) => String(s).padEnd(n);
+const padNum = (s, n) => String(s).padStart(n);
+// The UI's formatters drop precision on purpose to keep rows narrow — $312.47
+// renders as "$312". A prompt is read, not scanned, so it gets the cents back.
+const exactMoney = (n) => `$${(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const exactPct = (n) => `${(n ?? 0).toFixed(1)}%`;
+
+function promptRows(rows, cols) {
+  return rows.map((r) => r.map((c, i) => (i ? padNum(c, cols[i]) : pad(c, cols[0]))).join('  ')).join('\n');
+}
+
+/**
+ * A digest of the session, shaped as a prompt to paste into Claude.
+ *
+ * Deliberately metrics only — no message text, no tool output, no file paths
+ * beyond the project label. The drill-down above shows transcript prose, but
+ * this is written to be pasted somewhere else, and what leaves the machine
+ * should be the numbers and nothing more.
+ */
+function analysePrompt(d) {
+  const dur = d.firstTs && d.lastTs ? new Date(d.lastTs) - new Date(d.firstTs) : null;
+  const out = [];
+
+  out.push('Analyse this Claude Code session for token usage and cost efficiency.');
+  out.push('');
+  out.push('All dollar figures are EQUIVALENT API COST: what this traffic would cost at');
+  out.push('published per-MTok rates. On a Pro/Max subscription these are not billed — they');
+  out.push('are a common unit for comparing sessions, models and skills.');
+  out.push('');
+
+  out.push('## Session');
+  out.push(`Project: ${d.projectLabel || '—'}${d.gitBranch ? ` (${d.gitBranch})` : ''}`);
+  out.push(`Model: ${d.currentModel || '—'}${d.currentEffort ? ` · effort ${d.currentEffort}` : ''}`);
+  out.push(`Elapsed: ${dur == null ? '—' : fmtDur(dur)} · ${d.userMessages} user, `
+    + `${d.assistantMessages} assistant messages, ${d.toolCalls} tool calls`);
+  out.push(`Context now: ${exactPct(d.context.pct)} of ${d.context.window?.toLocaleString() ?? '—'} tokens`);
+  out.push('');
+
+  out.push('## Cost');
+  out.push(`Total: ${exactMoney(d.cost)}${d.subagentCost ? ` (subagents ${exactMoney(d.subagentCost)})` : ''}`);
+  out.push(`Tokens: ${d.tokens.total.toLocaleString()}`);
+  out.push(`Cache hit ratio: ${exactPct(d.cacheHitRatio * 100)} · saved ${exactMoney(d.savedByCache)} vs no caching`);
+  // The burn rate is a trailing-window figure; on a session that finished hours
+  // ago it is correctly $0.00/h, which in a prompt just reads as a broken stat.
+  if (d.active) out.push(`Burn rate: ${exactMoney(d.costPerMin * 60)}/h`);
+  out.push('');
+
+  if (d.costSplit?.total.cost) {
+    out.push('## Cost by token class');
+    out.push(promptRows(TOKEN_CLASSES.map(([key, label]) => [
+      label,
+      d.costSplit[key].tokens.toLocaleString(),
+      exactMoney(d.costSplit[key].cost),
+      exactPct((d.costSplit[key].cost / d.costSplit.total.cost) * 100),
+    ]), [16, 16, 10, 7]));
+    out.push('');
+  }
+
+  for (const [name, rows] of [['By model', d.perModel], ['By skill', d.perSkill], ['By agent', d.perAgent]]) {
+    if (!rows.length) continue;
+    out.push(`## ${name}`);
+    out.push(promptRows(rows.map((r) => [
+      String(r.key), `${r.calls} calls`, r.tokens.toLocaleString(), exactMoney(r.cost),
+    ]), [30, 11, 16, 10]));
+    out.push('');
+  }
+
+  if (d.subagents.length) {
+    out.push(`## Subagents (${d.subagentActiveCount} running of ${d.subagents.length})`);
+    out.push(promptRows(d.subagents.map((s) => [
+      s.description || s.agentType || s.agentId,
+      (s.model || '—').replace('claude-', ''),
+      `${s.calls} calls`,
+      exactMoney(s.cost),
+      s.active ? 'running' : 'done',
+    ]), [34, 14, 11, 10, 8]));
+    out.push('');
+  }
+
+  const events = [
+    d.compactionCount && `Compactions: ${d.compactionCount} (${fmtTokens(d.droppedTokens)} dropped, ${fmtDur(d.compactionMs)})`,
+    d.errorCount && `API errors: ${d.errorCount}`,
+    d.denialCount && `Tool denials: ${d.denialCount}`,
+    d.queuedOps && `Queued prompts: ${d.queuedOps}`,
+  ].filter(Boolean);
+  if (events.length) {
+    out.push('## Events');
+    out.push(...events);
+    out.push('');
+  }
+
+  out.push('Tell me:');
+  out.push('1. Where the money actually went, and whether that split is normal for this work.');
+  out.push('2. Anything wasteful — cache churn, repeated large reads, compaction losses.');
+  out.push('3. Concrete changes that would cut cost without losing capability.');
+  return out.join('\n');
+}
+
+function analyseBlock(d) {
+  const text = analysePrompt(d);
+  const b = el('div', 'block analyse');
+  const head = el('div', 'analyse-head');
+  head.append(el('h3', null, 'Analyse this session'));
+
+  const btn = el('button', 'ghost tiny', 'Copy prompt');
+  btn.type = 'button';
+  let revert = null;
+  btn.addEventListener('click', async () => {
+    let ok = true;
+    try {
+      // Loopback counts as a secure context, so this is available; the manual
+      // fallback covers a browser that still refuses (or denies permission).
+      await navigator.clipboard.writeText(text);
+    } catch {
+      ok = selectFallback(b.querySelector('pre'));
+    }
+    btn.textContent = ok ? 'Copied' : 'Press ⌘C';
+    clearTimeout(revert);
+    revert = setTimeout(() => { btn.textContent = 'Copy prompt'; }, 2000);
+  });
+  head.append(btn);
+  b.append(head);
+
+  b.append(el('p', 'hint', 'Metrics only — no message text or tool output is included.'));
+  b.append(el('pre', null, text));
+  return b;
+}
+
+/** Select the prompt so the user can copy it by hand. */
+function selectFallback(pre) {
+  if (!pre) return false;
+  const range = document.createRange();
+  range.selectNodeContents(pre);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  return false;
+}
+
 function footerBlock(d) {
   const bits = [d.cwd, d.gitBranch, d.currentEffort && `effort ${d.currentEffort}`,
     d.permissionMode, d.entrypoint, d.version && `v${d.version}`, d.sessionId].filter(Boolean);
@@ -435,6 +626,9 @@ async function loadHistory() {
     `${h.totals.days} active ${h.totals.days === 1 ? 'day' : 'days'} of ${h.totals.window} · `
     + `${fmtMoney(h.totals.cost)} equivalent · ${fmtTokens(h.totals.tokens.total)} tokens`);
   host.append(total);
+
+  const histSplit = costSplitBlock(h.totals.costSplit, 'Cost by token class');
+  if (histSplit) host.append(histSplit);
 
   const cols = el('div', 'hist-cols');
   for (const [name, rows] of [['Projects', h.totals.byProject], ['Models', h.totals.byModel], ['Skills', h.totals.bySkill]]) {

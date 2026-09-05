@@ -108,4 +108,51 @@ export function cacheHitRatio(t) {
   return readable > 0 ? t.cacheRead / readable : 0;
 }
 
+/**
+ * The five classes of token, in the order they are worth reading: what was
+ * sent, what came back, then the three cache lines.
+ */
+export const TOKEN_CLASSES = ['input', 'output', 'cacheWrite5m', 'cacheWrite1h', 'cacheRead'];
+
+/** Per-MTok rate for one class under one model's rate card. */
+function classRate(r, cls) {
+  switch (cls) {
+    case 'input': return r.in;
+    case 'output': return r.out;
+    case 'cacheWrite5m': return r.in * CACHE_WRITE_5M;
+    case 'cacheWrite1h': return r.in * CACHE_WRITE_1H;
+    case 'cacheRead': return r.in * CACHE_READ;
+    default: return 0;
+  }
+}
+
+/**
+ * Splits spend across the five token classes.
+ *
+ * Takes per-model entries — `[model, { tokens }]`, as held by a session's
+ * `perModel` or a history bucket's `byModel` — because every multiplier keys
+ * off that model's input rate. Summing tokens across models first and applying
+ * a blended rate afterwards would only ever be an approximation; done this way
+ * the parts add up to exactly the cost recorded elsewhere.
+ */
+export function costSplit(perModel) {
+  const out = { total: { tokens: 0, cost: 0 } };
+  for (const c of TOKEN_CLASSES) out[c] = { tokens: 0, cost: 0 };
+
+  for (const [model, entry] of perModel) {
+    const r = rateFor(model);
+    if (!r || !entry?.tokens) continue;
+    for (const c of TOKEN_CLASSES) {
+      const n = entry.tokens[c] || 0;
+      if (!n) continue;
+      const cost = n * classRate(r, c) / 1_000_000;
+      out[c].tokens += n;
+      out[c].cost += cost;
+      out.total.tokens += n;
+      out.total.cost += cost;
+    }
+  }
+  return out;
+}
+
 export { RATES, CACHE_WRITE_5M, CACHE_WRITE_1H, CACHE_READ };
