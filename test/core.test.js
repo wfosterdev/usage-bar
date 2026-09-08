@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import { costOf, uncachedCostOf, normalizeModel, contextWindowFor, emptyTokens, addTokens, cacheHitRatio, costSplit, TOKEN_CLASSES } from '../src/core/pricing.js';
 import { TailReader, discover, contentToText, proseOf, toolNames } from '../src/core/transcripts.js';
-import { newSession, applyLine, summarize, detail, isActive, burnRate, activeSubagents } from '../src/core/sessions.js';
+import { newSession, applyLine, summarize, detail, isActive, burnRate, activeSubagents, claudeLinks } from '../src/core/sessions.js';
 import { normalizeUsage } from '../src/core/limits.js';
 import { LimitProjector } from '../src/core/projection.js';
 import { ThresholdNotifier } from '../src/core/notify.js';
@@ -187,6 +187,52 @@ test('proseOf keeps only human-readable text', () => {
 });
 
 /* ---------- session aggregation ---------- */
+
+test('a session is named the way the Claude apps name it', () => {
+  const s = newSession('s1', '-Users-me-code');
+  const prompt = (text) => ({ type: 'user', timestamp: '2026-09-05T01:00:00.000Z', message: { content: text } });
+
+  // Before anything is known, the project is all there is.
+  assert.equal(summarize(s).name, 'me/code');
+
+  applyLine(s, prompt('Fix the notification spam\nand then look at the menu bar'));
+  assert.equal(summarize(s).name, 'Fix the notification spam', 'the opening prompt, first line only');
+
+  applyLine(s, prompt('a later message'));
+  assert.equal(summarize(s).name, 'Fix the notification spam', 'the OPENING prompt, not the latest');
+
+  applyLine(s, { type: 'ai-title', aiTitle: 'Notification spam on usage changes' });
+  assert.equal(summarize(s).name, 'Notification spam on usage changes', 'the generated title wins');
+});
+
+test('a very long opening prompt is trimmed to a name', () => {
+  const s = newSession('s1', 'p');
+  applyLine(s, { type: 'user', message: { content: 'x'.repeat(400) } });
+  const { name } = summarize(s);
+  assert.ok(name.length <= 72, `name was ${name.length} characters`);
+  assert.ok(name.endsWith('…'));
+});
+
+test('only a bridged session can be opened in the Claude apps', () => {
+  const s = newSession('s1', 'p');
+  assert.equal(summarize(s).claude, null, 'a terminal-only session offers no link');
+
+  applyLine(s, { type: 'bridge-session', bridgeSessionId: 'cse_01HM2jMNcNLDkgHQDVm3Z6J4' });
+  assert.deepEqual(summarize(s).claude, {
+    id: 'session_01HM2jMNcNLDkgHQDVm3Z6J4',
+    web: 'https://claude.ai/code/session_01HM2jMNcNLDkgHQDVm3Z6J4',
+    desktop: 'claude://claude.ai/code/session_01HM2jMNcNLDkgHQDVm3Z6J4',
+  });
+});
+
+test('an id in an unrecognised shape gets no link rather than a broken one', () => {
+  // Seen in real transcripts: the line is written with an empty id.
+  assert.equal(claudeLinks(''), null);
+  assert.equal(claudeLinks(null), null);
+  assert.equal(claudeLinks('01HM2jMNcNLDkgHQDVm3Z6J4'), null);
+  assert.equal(claudeLinks('session_01HM2j').web, 'https://claude.ai/code/session_01HM2j');
+});
+
 
 test('assistant messages accumulate cost, tokens and context fill', () => {
   const s = newSession('s1', '-Users-me-code');

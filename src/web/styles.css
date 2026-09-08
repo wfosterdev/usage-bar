@@ -46,7 +46,7 @@ main { max-width: 1080px; margin: 0 auto; padding: 20px; display: flex; flex-dir
 .sessions { display: flex; flex-direction: column; gap: 8px; }
 .srow { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); overflow: hidden; }
 .srow > summary { list-style: none; cursor: pointer; padding: 11px 14px; display: grid;
-  grid-template-columns: 12px minmax(0,1fr) auto auto auto; gap: 12px; align-items: center; }
+  grid-template-columns: 12px minmax(0,1fr) auto auto auto auto; gap: 12px; align-items: center; }
 .srow > summary::-webkit-details-marker { display: none; }
 .srow > summary:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .srow[open] > summary { border-bottom: 1px solid var(--line); }
@@ -462,3 +462,10 @@ legend { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; col
   font-size: 11px;
   vertical-align: baseline;
 }
+
+/* Session identity: opening a session in the Claude apps, or saying it cannot be. */
+.chip.open { color: var(--accent); border-color: var(--accent); text-decoration: none; }
+.chip.open:hover { background: var(--accent); color: var(--bg); }
+.chip.terminal { opacity: 0.6; }
+.identline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.identline code { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }

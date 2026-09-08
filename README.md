@@ -7,7 +7,7 @@ know about what is running right now.
 Two surfaces over one core:
 
 - **macOS menu bar** — a glance (session % left, busy indicator) and the active
-  session list. Click a session to open it in the dashboard.
+  session list, each named the way Claude Desktop names it and openable there.
 - **Web dashboard** — the drill-down: context fill, cost by model/skill/agent,
   subagent tree, last messages, compaction and error events, history charts.
 
@@ -26,8 +26,10 @@ Claude Usage default_claude_max_20x
 Active sessions 2 of 40 · $44.84 · $55.36/h
   ● Claude usage bar with session monitoring   opus-5    5.1M    $9.51
     usage/bar · ctx 14% · ▶ Bash
-  ● main/api                                   opus-5   35.7M   $35.33
+    https://claude.ai/code/session_01HM2jMNcNLDkgHQDVm3Z6J4
+  ● Fix the analytics lane before the merge      opus-5   35.7M   $35.33
     main/api · l4/analytics-laneb2 · ctx 10% · 3/5 subagents · ▶ 3 agents
+    terminal session only
 ```
 
 ## Install
@@ -478,6 +480,21 @@ record, so it appears with the description it was dispatched with before it has
 spent anything; nothing marks an agent as finished, so "running" means it wrote
 within the same idle window the sessions use. A session whose own turn has ended
 still counts as busy while its agents are working.
+
+**Names and links** — a session is called what the Claude apps call it: the
+generated title the transcript records, falling back to the opening prompt
+(which is what Desktop shows until a title exists), and only then to the project
+directory. Dozens of sessions you did not start yourself are otherwise
+indistinguishable from each other.
+
+A session that was bridged to the Claude apps records the id they address it by,
+and that is what makes it openable: **Open ↗** on the dashboard row, or the
+submenu in the menu bar, hands `claude://claude.ai/code/session_…` to macOS,
+which routes it to Claude Desktop. The claude.ai URL for the same session is
+offered alongside it, because a deep link the app does not handle fails silently.
+Sessions that only ever existed in a terminal were never bridged, have nothing at
+the other end, and are marked **Terminal session only** rather than given a link
+that goes nowhere.
 
 ## Privacy
 
