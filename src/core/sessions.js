@@ -65,6 +65,8 @@ export function newSession(sessionId, project) {
     projectLabel: projectLabel(project),
     cwd: decodeProjectDir(project),
     title: null,
+    firstPrompt: null,
+    bridgeSessionId: null,
     gitBranch: null,
     version: null,
     entrypoint: null,
@@ -136,6 +138,13 @@ export function applyLine(s, line, source = {}, history = null) {
       if (line.aiTitle) s.title = line.aiTitle;
       return;
 
+    // Written when a session is bridged to the Claude apps. It is the only
+    // place a transcript records the id those apps address the session by, and
+    // so the only thing that makes a session openable from here.
+    case 'bridge-session':
+      if (line.bridgeSessionId) s.bridgeSessionId = line.bridgeSessionId;
+      return;
+
     case 'queue-operation':
       s.queuedOps += 1;
       return;
@@ -163,7 +172,12 @@ export function applyLine(s, line, source = {}, history = null) {
       }
       if (!isSubagent && line.message && !line.isMeta) {
         const text = proseOf(line.message.content);
-        if (text) pushCapped(s.messages, { ts, role: 'user', text, tools: [], agentId: null }, MAX_MESSAGES);
+        if (text) {
+          // Kept out of `messages`, which is capped and loses its head on a long
+          // session — and the opening prompt is exactly what we want to keep.
+          if (!s.firstPrompt) s.firstPrompt = text;
+          pushCapped(s.messages, { ts, role: 'user', text, tools: [], agentId: null }, MAX_MESSAGES);
+        }
       }
       return;
     }
@@ -317,6 +331,51 @@ function mapToSorted(map) {
     .sort((a, b) => b.cost - a.cost);
 }
 
+/**
+ * What to call a session, in the order that best matches what the Claude apps
+ * show: the generated title if there is one, otherwise the opening prompt,
+ * which is what Desktop displays until a title is generated. The project is a
+ * last resort — a dozen sessions in one repo all look identical under it, which
+ * is precisely the problem.
+ */
+export function displayName(s) {
+  if (s.title) return s.title;
+  if (s.firstPrompt) return firstLine(s.firstPrompt, NAME_MAX);
+  return s.projectLabel || s.sessionId.slice(0, 8);
+}
+
+/** Long enough to tell two agent runs apart, short enough for a menu bar row. */
+const NAME_MAX = 72;
+
+function firstLine(text, max) {
+  const line = String(text).trim().split('\n')[0].trim();
+  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+}
+
+/**
+ * Where to open a session in the Claude apps, or null for one that only ever
+ * existed in a terminal.
+ *
+ * Transcripts record the bridged id as `cse_01ABC…`; the apps address the same
+ * session as `session_01ABC…`. The `claude://claude.ai/…` scheme is Desktop's
+ * documented deep link and mirrors the web path, so both are derived from the
+ * one id. Anything in an unrecognised shape gets no link at all rather than a
+ * guessed one that fails silently when clicked.
+ */
+export function claudeLinks(bridgeSessionId) {
+  const raw = String(bridgeSessionId || '').trim();
+  if (!raw) return null;
+  const id = raw.startsWith('cse_') ? `session_${raw.slice(4)}`
+    : raw.startsWith('session_') ? raw
+    : null;
+  if (!id) return null;
+  return {
+    id,
+    web: `https://claude.ai/code/${id}`,
+    desktop: `claude://claude.ai/code/${id}`,
+  };
+}
+
 /** Compact summary for list views. */
 export function summarize(s, now = Date.now(), idleMs = 5 * MINUTE) {
   const rate = burnRate(s, now);
@@ -325,7 +384,9 @@ export function summarize(s, now = Date.now(), idleMs = 5 * MINUTE) {
   const active = isActive(s, now, idleMs);
   return {
     sessionId: s.sessionId,
+    name: displayName(s),
     title: s.title,
+    claude: claudeLinks(s.bridgeSessionId),
     project: s.project,
     projectLabel: s.projectLabel,
     cwd: s.cwd,

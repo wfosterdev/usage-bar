@@ -131,12 +131,14 @@ function renderStatus(store) {
   for (const s of snap.active) {
     const busy = s.lastStopReason === 'tool_use';
     const mark = busy ? `${C.o}●${C.r}` : `${C.g}○${C.r}`;
-    out.push(`  ${mark} ${C.b}${(s.title || s.projectLabel).slice(0, 46).padEnd(46)}${C.r} ${(s.currentModel || '—').replace('claude-', '').padEnd(11)} ${tokens(s.tokens.total).padStart(6)} ${money(s.cost).padStart(8)}`);
+    out.push(`  ${mark} ${C.b}${s.name.slice(0, 46).padEnd(46)}${C.r} ${(s.currentModel || '—').replace('claude-', '').padEnd(11)} ${tokens(s.tokens.total).padStart(6)} ${money(s.cost).padStart(8)}`);
     const bits = [s.projectLabel, s.gitBranch, `ctx ${s.context.pct.toFixed(0)}%`,
       s.subagentCount ? `${s.subagentCount} subagents` : null,
       busy ? `▶ ${s.activeTools[0]}` : `${dur(s.idleMs)} idle`,
       s.compactionCount ? `${s.compactionCount} compactions` : null].filter(Boolean);
     out.push(`    ${C.dim}${bits.join(' · ')}${C.r}`);
+    // Cmd-clickable in most terminals, which is the whole point of printing it.
+    out.push(`    ${C.dim}${s.claude ? s.claude.web : 'terminal session only'}${C.r}`);
   }
 
   const h = store.history.totals(7);

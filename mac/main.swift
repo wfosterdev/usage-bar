@@ -50,6 +50,12 @@ struct ActiveSession: Decodable {
     let sessionId: String
     let title: String?
     let project: String?
+    /// Deep link into Claude Desktop, and the same session on the web. Both are
+    /// nil for a session that only ever existed in a terminal — it was never
+    /// bridged to the apps, so there is nothing there to open.
+    /// Optional so a newer app still decodes an older server's payload.
+    let claudeUrl: String?
+    let claudeWebUrl: String?
     let branch: String?
     let model: String?
     let cost: Double
@@ -1005,9 +1011,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.representedObject = session.sessionId
 
             let mark = session.busy ? "\u{25CF}" : "\u{25CB}"
+            // Second column, blank for a terminal-only session: which of these
+            // can be opened in Claude has to be readable at a glance, not found
+            // by going into each submenu in turn.
+            let link = session.claudeUrl != nil ? "\u{2197}" : " "
             let name = (session.title ?? session.project ?? session.sessionId).truncated(to: 34)
-            let line = String(format: "%@ %@ %@ %@",
-                              mark, name.padded(to: 34),
+            let line = String(format: "%@%@ %@ %@ %@",
+                              mark, link, name.padded(to: 34),
                               Fmt.tokens(session.tokens).padded(to: 7, right: true),
                               Fmt.money(session.cost).padded(to: 8, right: true))
             let title = NSMutableAttributedString(attributedString: mono(line))
@@ -1035,6 +1045,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             else if let idle = session.idleMs { detail.append("\(Fmt.duration(idle / 1000)) idle") }
             for d in detail { sub.addItem(disabledItem(mono(d, size: 11, color: menuDim))) }
             sub.addItem(.separator())
+            if let deep = session.claudeUrl {
+                let inClaude = NSMenuItem(title: "Open in Claude Desktop",
+                                          action: #selector(openInClaude(_:)), keyEquivalent: "")
+                inClaude.target = self
+                inClaude.representedObject = deep
+                sub.addItem(inClaude)
+                if let web = session.claudeWebUrl {
+                    // The fallback that matters: a deep link the app does not
+                    // handle does nothing at all, and says nothing about why.
+                    let onWeb = NSMenuItem(title: "Open on claude.ai",
+                                           action: #selector(openInClaude(_:)), keyEquivalent: "")
+                    onWeb.target = self
+                    onWeb.representedObject = web
+                    sub.addItem(onWeb)
+                }
+            } else {
+                sub.addItem(disabledItem(mono("Terminal session only", size: 11, color: menuDim)))
+            }
             let open = NSMenuItem(title: "Open in dashboard", action: #selector(openSession(_:)), keyEquivalent: "")
             open.target = self
             open.representedObject = session.sessionId
@@ -1077,6 +1105,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: Actions
+
+    /// Hands a `claude://` deep link (or the claude.ai URL) to the system, which
+    /// routes it to Claude Desktop if the app is registered for the scheme.
+    @objc private func openInClaude(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let url = URL(string: raw) else { return }
+        NSWorkspace.shared.open(url)
+    }
 
     @objc private func openSession(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String,

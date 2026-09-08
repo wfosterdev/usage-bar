@@ -200,8 +200,12 @@ export function menubarView(store) {
     },
     activeSessions: snap.active.map((s) => ({
       sessionId: s.sessionId,
-      title: s.title || s.projectLabel,
+      title: s.name,
       project: s.projectLabel,
+      // Null for a session that only ever lived in a terminal: there is nothing
+      // on the other end of a link, so the app says so instead of offering one.
+      claudeUrl: s.claude?.desktop || null,
+      claudeWebUrl: s.claude?.web || null,
       branch: s.gitBranch,
       model: s.currentModel,
       cost: s.cost,

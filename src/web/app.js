@@ -182,7 +182,7 @@ function sessionRow(s) {
   sum.append(state);
 
   const title = el('div', 'stitle');
-  title.append(el('b', null, s.title || s.projectLabel || s.sessionId.slice(0, 8)));
+  title.append(el('b', null, s.name || s.projectLabel || s.sessionId.slice(0, 8)));
   const meta = [s.projectLabel, s.gitBranch, busy && doing ? `▶ ${doing}` : null,
     // Live over lifetime, because a session that ran twelve agents an hour ago
     // and a session running twelve right now are not the same thing.
@@ -200,6 +200,7 @@ function sessionRow(s) {
   ctx.append(cbar);
   sum.append(ctx);
 
+  sum.append(openControl(s));
   sum.append(el('span', 'chip model', s.currentModel ? s.currentModel.replace('claude-', '') : '—'));
   sum.append(el('span', 'money', fmtMoney(s.cost)));
   row.append(sum);
@@ -214,6 +215,53 @@ function sessionRow(s) {
   });
   if (row.open) loadDetail(s.sessionId, body);
   return row;
+}
+
+/**
+ * Opens the session in Claude Desktop, for the sessions that can be opened.
+ *
+ * A session only reaches the apps if it was bridged to them; one that lived
+ * entirely in a terminal has nothing on the other end, so it says so rather
+ * than offering a link that would go nowhere. The anchor sits inside a
+ * <summary>, where a plain click would toggle the row open as well.
+ */
+function openControl(s) {
+  if (!s.claude) {
+    const mark = el('span', 'chip terminal', 'Terminal only');
+    mark.title = 'Terminal session only — it was never bridged to the Claude apps, so there is nothing to open.';
+    return mark;
+  }
+  const a = el('a', 'chip open', 'Open ↗');
+  a.href = s.claude.desktop;
+  a.title = `Open in Claude Desktop · ${s.claude.web}`;
+  a.addEventListener('click', (e) => e.stopPropagation());
+  return a;
+}
+
+/**
+ * Who this session is and where to open it. The web link is offered alongside
+ * the Desktop one because a deep link that the app does not handle fails
+ * silently, and a link that lands in the browser is better than nothing.
+ */
+function identityBlock(d) {
+  const b = el('div', 'block ident');
+  b.append(el('h3', null, 'Session'));
+  const line = el('div', 'identline');
+  line.append(el('code', null, d.sessionId));
+  if (d.claude) {
+    const app = el('a', 'chip open', 'Open in Claude Desktop ↗');
+    app.href = d.claude.desktop;
+    line.append(app);
+    const web = el('a', 'chip', 'claude.ai ↗');
+    web.href = d.claude.web;
+    web.target = '_blank';
+    web.rel = 'noreferrer';
+    line.append(web);
+  } else {
+    line.append(el('span', 'chip terminal', 'Terminal session only'));
+  }
+  b.append(line);
+  return b;
 }
 
 function renderSessions(snap) {
@@ -248,6 +296,7 @@ async function loadDetail(id, host) {
     return;
   }
   host.innerHTML = '';
+  host.append(identityBlock(d));
   host.append(statGrid(d));
   const split = costSplitBlock(d.costSplit);
   if (split) host.append(split);
