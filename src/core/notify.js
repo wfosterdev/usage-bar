@@ -15,11 +15,26 @@ const DEFAULT_THRESHOLDS = [50, 75, 90, 95];
 const DEFAULT_COOLDOWN_MS = 15 * 60 * 1000;
 
 /**
- * Fires once per threshold per reset window. Keyed on the limit's `resetsAt`,
- * so crossing 75% again after the window rolls over re-arms and notifies again,
- * but a percentage oscillating around 75% inside one window does not spam.
+ * How far usage must fall back below a threshold before that threshold can
+ * fire again. Weekly limits are rolling windows: the percentage drifts down as
+ * old usage ages out, so a reading that wobbles across 75% must not be read as
+ * a fresh crossing every time it wobbles. A genuine window reset drops usage to
+ * near zero, which clears this by a mile.
+ */
+const REARM_MARGIN = 5;
+
+/**
+ * Fires once per threshold, and does not fire again until usage has genuinely
+ * fallen back below it.
  *
- * Three separate things keep the volume down, because usage moves in jumps and
+ * The re-arm signal is the percentage itself, not the limit's `resets_at`. A
+ * reset time is a poor proxy for a new window: it creeps, it arrives stale or
+ * out of order, it is sometimes absent, and every one of those looked like a
+ * rollover — which re-armed the whole ladder and pinged on the next poll, once
+ * a minute, forever. Usage falling back is unambiguous, and a real reset
+ * produces it anyway by dropping the percentage to nearly nothing.
+ *
+ * Three further things keep the volume down, because usage moves in jumps and
  * an account reports several limits at once:
  *
  *   - a jump past more than one threshold notifies for the HIGHEST only, and
@@ -49,7 +64,7 @@ export class ThresholdNotifier {
     this.cooldownMs = Math.max(0, Number(cooldownMs) || 0);
     this.deliver = deliver;
     this.now = now;
-    /** @type {Map<string, {resetsAt: string|null, fired: Set<number>}>} */
+    /** @type {Map<string, {fired: Set<number>}>} */
     this.state = new Map();
     this.lastNotifyAt = -Infinity;
   }
@@ -57,9 +72,10 @@ export class ThresholdNotifier {
   check(limits) {
     if (!this.enabled) return [];
     const fired = [];
-    for (const l of limits) {
-      if (typeof l.percent !== 'number') continue;
-      const st = this.#stateFor(l);
+    for (const { limit: l, state: st } of this.#walk(limits)) {
+      // Anything usage has dropped back under is armed again, so the next
+      // climb past it is news. This is the only way a threshold re-arms.
+      for (const th of st.fired) if (l.percent < th - REARM_MARGIN) st.fired.delete(th);
 
       // Every newly crossed threshold is armed, but only the top one is an
       // event. Arming the others is what stops them firing on the next poll.
@@ -85,34 +101,42 @@ export class ThresholdNotifier {
 
   /** Pre-arm thresholds already crossed, so starting at 80% doesn't fire 50 and 75. */
   prime(limits) {
-    for (const l of limits) {
-      if (typeof l.percent !== 'number') continue;
-      const st = this.#stateFor(l);
+    for (const { limit: l, state: st } of this.#walk(limits)) {
       for (const th of this.thresholds) if (l.percent >= th) st.fired.add(th);
     }
   }
 
   /**
-   * Per-limit dedup state, re-armed when the window rolls over.
+   * Pairs each limit with its own dedup state, creating it on first sight.
    *
-   * The key has to separate every limit the account reports. Keying on kind and
-   * model alone collided two scoped weekly limits with no model, and since they
-   * carried different reset times each poll looked like a rollover to the other
-   * one — which re-armed the thresholds and pinged, forever.
+   * The key has to separate every limit the account reports, because two limits
+   * sharing one state would re-arm each other on every poll. Kind and model
+   * alone collided two scoped weekly limits with no model, so the key carries
+   * group, surface and label too — and an occurrence counter behind that, so
+   * entries that are genuinely indistinguishable still get a state each rather
+   * than trading one back and forth.
    */
-  #stateFor(l) {
-    const key = [
-      l.kind,
-      l.group || '',
-      l.scope?.model?.display_name || l.scope?.model?.id || '',
-      l.scope?.surface || '',
-      l.label || '',
-    ].join('|');
-    const st = this.state.get(key);
-    if (st && !windowRolled(st.resetsAt, l.resetsAt)) return st;
-    const fresh = { resetsAt: l.resetsAt, fired: new Set() };
-    this.state.set(key, fresh);
-    return fresh;
+  #walk(limits) {
+    const seen = new Map();
+    const out = [];
+    for (const l of limits) {
+      if (typeof l.percent !== 'number') continue;
+      const base = [
+        l.kind,
+        l.group || '',
+        l.scope?.model?.display_name || l.scope?.model?.id || '',
+        l.scope?.surface || '',
+        l.label || '',
+      ].join('|');
+      const n = seen.get(base) || 0;
+      seen.set(base, n + 1);
+      const key = n ? `${base}#${n}` : base;
+
+      let st = this.state.get(key);
+      if (!st) { st = { fired: new Set() }; this.state.set(key, st); }
+      out.push({ limit: l, state: st });
+    }
+    return out;
   }
 
   #dispatch(events) {
@@ -139,20 +163,6 @@ export class ThresholdNotifier {
       this.deliver(`Claude usage · ${events.length} limits past ${top.threshold}%`, body);
     }
   }
-}
-
-/**
- * True when `next` is a genuinely later window than `prev`.
- *
- * Deliberately not `prev !== next`: an out-of-order or briefly stale reading
- * would look like a rollover and re-arm every threshold.
- */
-function windowRolled(prev, next) {
-  if (prev === next) return false;
-  const a = Date.parse(prev ?? '');
-  const b = Date.parse(next ?? '');
-  if (Number.isNaN(a) || Number.isNaN(b)) return true;  // not dates — trust inequality
-  return b > a;
 }
 
 function formatReset(iso) {
@@ -187,4 +197,4 @@ async function postWebhook(url, event) {
   } catch { /* a dead webhook must not break polling */ }
 }
 
-export { DEFAULT_THRESHOLDS, DEFAULT_COOLDOWN_MS };
+export { DEFAULT_THRESHOLDS, DEFAULT_COOLDOWN_MS, REARM_MARGIN };

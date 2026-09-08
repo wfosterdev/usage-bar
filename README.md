@@ -186,13 +186,16 @@ minimum 30s — see [Polling](#polling-and-rate-limits)), `--thresholds 50,75,90
 Desktop notifications are **on** by default at 50/75/90/95%, and both the switch
 and the percentages are in Settings (or `--no-notify` / `--thresholds`).
 
-Each threshold notifies once per limit per reset window, and three rules keep
-that from becoming a stream: crossing several thresholds in one jump is a single
-notification for the highest, limits that cross in the same poll are combined
-into one, and a **quiet period** (15 minutes by default, `--quiet-for 0` to
-disable) suppresses anything after that — except the highest threshold on your
-list, which always gets through. Suppressed crossings are still shown on the
-dashboard and still sent to the webhook; only the ping is rationed.
+Each threshold notifies once per limit, and does not notify again until usage
+has actually fallen back below it — a window reset does that by dropping the
+percentage to nearly nothing, while a reading that wobbles across the line does
+not. Three further rules keep the rest from becoming a stream: crossing several
+thresholds in one jump is a single notification for the highest, limits that
+cross in the same poll are combined into one, and a **quiet period** (15 minutes
+by default, `--quiet-for 0` to disable) suppresses anything after that — except
+the highest threshold on your list, which always gets through. Suppressed
+crossings are still shown on the dashboard and still sent to the webhook; only
+the ping is rationed.
 
 ## Settings
 
