@@ -428,7 +428,7 @@ test('a new reset window discards the previous window samples', () => {
 
 /* ---------- notifier ---------- */
 
-test('each threshold fires once per reset window', () => {
+test('each threshold fires once until usage falls back below it', () => {
   const fired = [];
   const n = new ThresholdNotifier({ thresholds: [50, 75], deliver: () => {}, onEvent: (e) => fired.push(e.threshold) });
   const at = (percent, resetsAt = 'A') => [{ kind: 'session', percent, resetsAt, label: 'Session (5h)', scope: null }];
@@ -442,7 +442,11 @@ test('each threshold fires once per reset window', () => {
   n.check(at(90));           // both already fired this window
   assert.deepEqual(fired, []);
 
-  n.check(at(60, 'B'));      // window rolled over — 50 re-arms
+  n.check(at(72));           // drifted back under 75, but not clear of it
+  assert.deepEqual(fired, []);
+
+  n.check(at(3, 'B'));       // the window reset — everything re-arms
+  n.check(at(60, 'B'));
   assert.deepEqual(fired, [50]);
 });
 
@@ -473,16 +477,36 @@ test('limits sharing a kind keep separate state', () => {
   assert.deepEqual(fired, ['Weekly · api']);
 });
 
-test('a stale reading of an older window does not re-arm', () => {
+test('a moving reset time is not a reason to notify again', () => {
+  // The regression this exists for: the reset time was the re-arm signal, so a
+  // value that crept forward, arrived out of order, or went missing re-armed
+  // the ladder and pinged on every single poll.
   const fired = [];
   const n = new ThresholdNotifier({ thresholds: [50], deliver: () => {}, onEvent: (e) => fired.push(e.threshold) });
   const at = (resetsAt) => [{ kind: 'session', percent: 60, resetsAt, label: 'Session (5h)', scope: null }];
 
   n.check(at('2026-09-05T12:00:00Z'));
-  n.check(at('2026-09-05T07:00:00Z'));   // out of order — not a rollover
+  n.check(at('2026-09-05T07:00:00Z'));   // stale, out of order
+  n.check(at('2026-09-05T17:00:00Z'));   // later than anything seen so far
+  n.check(at(null));                     // absent altogether
+  n.check(at('not a date'));             // unparseable
+  n.check(at('2026-09-05T18:00:00Z'));
+  assert.deepEqual(fired, [50], 'usage never moved, so there is nothing new to say');
+});
+
+test('indistinguishable limits do not re-arm each other', () => {
+  // Two entries the payload gives us no way to tell apart. Sharing one dedup
+  // state, their differing percentages would take turns re-arming it.
+  const fired = [];
+  const n = new ThresholdNotifier({ thresholds: [50], deliver: () => {}, onEvent: (e) => fired.push(e.threshold) });
+  const limits = [
+    { kind: 'weekly_scoped', group: 'weekly', percent: 80, resetsAt: 'A', label: 'Weekly (scoped)', scope: null },
+    { kind: 'weekly_scoped', group: 'weekly', percent: 10, resetsAt: 'B', label: 'Weekly (scoped)', scope: null },
+  ];
+  n.check(limits);
+  n.check(limits);
+  n.check(limits);
   assert.deepEqual(fired, [50]);
-  n.check(at('2026-09-05T17:00:00Z'));   // genuinely later — re-arms
-  assert.deepEqual(fired, [50, 50]);
 });
 
 test('the quiet period rations pings but never swallows an escalation', () => {
@@ -508,7 +532,8 @@ test('the quiet period rations pings but never swallows an escalation', () => {
   assert.equal(pings.length, 2);
 
   clock += 20 * 60 * 1000;            // quiet period has passed
-  n.check([{ kind: 'session', percent: 55, resetsAt: 'B', label: 'Session (5h)', scope: null }]);
+  n.check(at(2));                     // the window reset — the ladder re-arms
+  n.check(at(55));
   assert.equal(pings.length, 3);
 });
 
